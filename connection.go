@@ -1,5 +1,10 @@
 package events
 
+import (
+	"github.com/charmbracelet/log"
+	"github.com/gorilla/websocket"
+)
+
 type Connection struct {
 	ws   *websocket.Conn
 	send chan Event
