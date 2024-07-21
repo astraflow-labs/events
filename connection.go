@@ -1,19 +1,28 @@
 package events
 
 import (
+	"context"
+	"sync"
+
 	"github.com/charmbracelet/log"
 	"github.com/gorilla/websocket"
 )
 
 type Connection struct {
-	ws   *websocket.Conn
-	send chan Event
+	ws    *websocket.Conn
+	send  chan Event
+	ctx   context.Context
+	Close context.CancelFunc
+	mu    sync.Mutex
 }
 
 func NewConnection(ws *websocket.Conn) *Connection {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Connection{
-		ws:   ws,
-		send: make(chan Event),
+		ws:    ws,
+		send:  make(chan Event),
+		ctx:   ctx,
+		Close: cancel,
 	}
 }
 
@@ -21,18 +30,25 @@ type EventHandler func(Event, *Connection)
 
 func (c *Connection) ReadLoop(eventHandler EventHandler) {
 	defer func() {
-		c.ws.Close()
+		c.closeOnce()
 	}()
 
 	for {
-		var event Event
-		err := c.ws.ReadJSON(&event)
-		if err != nil {
-			log.Error("Error reading from websocket", "err", err)
-			break
+		select {
+		case <-c.ctx.Done():
+			// Handle shutdown
+			log.Info("ReadLoop shutting down gracefully")
+			return
+		default:
+			var event Event
+			err := c.ws.ReadJSON(&event)
+			if err != nil {
+				log.Error("Error reading from websocket", "err", err)
+				c.closeOnce() // Signal other loops to shut down
+				return
+			}
+			eventHandler(event, c)
 		}
-
-		eventHandler(event, c)
 	}
 }
 
@@ -59,9 +75,14 @@ func (c *Connection) WriteLoop() {
 	}
 }
 
-func (c *Connection) Close() error {
-	close(c.send)
-	return c.ws.Close()
+// Implement closeOnce to ensure ws.Close() is called only once
+func (c *Connection) closeOnce() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.ws != nil {
+		c.ws.Close()
+		c.ws = nil // Prevent further use
+	}
 }
 
 func (c *Connection) Send() chan<- Event {
