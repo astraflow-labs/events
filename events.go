@@ -1,15 +1,18 @@
 package events
 
+import "github.com/google/uuid"
+
 type Event struct {
 	EventType string `json:"event_type"`
 	EventID   string `json:"event_id"`
 	Data      []byte `json:"data"`
 }
 
-func NewEvent(eventType string, eventID string, data []byte) Event {
+func NewEvent(eventType string, data []byte) Event {
+	uid := uuid.New().String()
 	return Event{
 		EventType: eventType,
-		EventID:   eventID,
+		EventID:   uid,
 		Data:      data,
 	}
 }
