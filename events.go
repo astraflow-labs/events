@@ -1,6 +1,10 @@
 package events
 
-import "github.com/google/uuid"
+import (
+	"strings"
+
+	"github.com/google/uuid"
+)
 
 type Event struct {
 	EventType string `json:"event_type"`
@@ -11,7 +15,7 @@ type Event struct {
 func NewEvent(eventType string, data []byte) Event {
 	uid := uuid.New().String()
 	return Event{
-		EventType: eventType,
+		EventType: strings.ToUpper(eventType),
 		EventID:   uid,
 		Data:      data,
 	}
