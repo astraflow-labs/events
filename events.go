@@ -13,3 +13,11 @@ func NewEvent(eventType string, eventID string, data []byte) Event {
 		Data:      data,
 	}
 }
+
+func (e Event) Respond(data []byte) Event {
+	return Event{
+		EventType: e.EventType + "RSP",
+		EventID:   e.EventID,
+		Data:      data,
+	}
+}

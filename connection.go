@@ -8,7 +8,6 @@ import (
 type Connection struct {
 	ws   *websocket.Conn
 	send chan Event
-	// eventLock sync.Mutex
 }
 
 func NewConnection(ws *websocket.Conn) *Connection {
@@ -18,7 +17,9 @@ func NewConnection(ws *websocket.Conn) *Connection {
 	}
 }
 
-func (c *Connection) ReadLoop(handleEvent func(Event, *Connection)) {
+type EventHandler func(Event, *Connection)
+
+func (c *Connection) ReadLoop(eventHandler EventHandler) {
 	defer func() {
 		c.ws.Close()
 	}()
@@ -31,7 +32,7 @@ func (c *Connection) ReadLoop(handleEvent func(Event, *Connection)) {
 			break
 		}
 
-		handleEvent(event, c)
+		eventHandler(event, c)
 	}
 }
 
