@@ -70,19 +70,22 @@ func (c *Connection) Send() chan<- Event {
 }
 
 func (c *Connection) WaitForResponse(event Event) (Event, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.waitingForResponse == nil {
 		c.waitingForResponse = make(map[string]chan Event)
 	}
+
 	ch := make(chan Event, 1)
+	c.mu.Lock()
 	c.waitingForResponse[event.EventID] = ch
+	c.mu.Unlock()
 
 	select {
 	case resp := <-ch:
 		return resp, nil
 	case <-time.After(5 * time.Second):
+		c.mu.Lock()
 		delete(c.waitingForResponse, event.EventID)
+		c.mu.Unlock()
 		close(ch)
 		return Event{}, ErrResponseTimeouted
 	}
