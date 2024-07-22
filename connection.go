@@ -3,6 +3,7 @@ package events
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -68,7 +69,7 @@ func (c *Connection) Send() chan<- Event {
 	return c.send
 }
 
-func (c *Connection) WaitForResponse(event Event) chan Event {
+func (c *Connection) WaitForResponse(event Event) (Event, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.waitingForResponse == nil {
@@ -76,7 +77,13 @@ func (c *Connection) WaitForResponse(event Event) chan Event {
 	}
 	ch := make(chan Event, 1)
 	c.waitingForResponse[event.EventID] = ch
-	return ch
+
+	select {
+	case resp := <-ch:
+		return resp, nil
+	case <-time.After(5 * time.Second):
+		return Event{}, ErrResponseTimeouted
+	}
 }
 
 func (c *Connection) Close() error {
