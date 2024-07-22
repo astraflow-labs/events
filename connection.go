@@ -9,11 +9,12 @@ import (
 )
 
 type Connection struct {
-	ws    *websocket.Conn
-	send  chan Event
-	ctx   context.Context
-	Close context.CancelFunc
-	mu    sync.Mutex
+	ws                 *websocket.Conn
+	send               chan Event
+	ctx                context.Context
+	Close              context.CancelFunc
+	mu                 sync.Mutex
+	waitingForResponse map[string]chan Event
 }
 
 func NewConnection(ws *websocket.Conn) *Connection {
@@ -47,6 +48,14 @@ func (c *Connection) ReadLoop(eventHandler EventHandler) {
 				c.closeOnce() // Signal other loops to shut down
 				return
 			}
+
+			if ch, ok := c.waitingForResponse[event.EventID]; ok {
+				ch <- event
+				delete(c.waitingForResponse, event.EventID)
+				close(ch)
+				continue
+			}
+
 			eventHandler(event, c)
 		}
 	}
@@ -87,4 +96,15 @@ func (c *Connection) closeOnce() {
 
 func (c *Connection) Send() chan<- Event {
 	return c.send
+}
+
+func (c *Connection) WaitForResponse(event Event) chan Event {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.waitingForResponse == nil {
+		c.waitingForResponse = make(map[string]chan Event)
+	}
+	ch := make(chan Event, 1)
+	c.waitingForResponse[event.EventID] = ch
+	return ch
 }
