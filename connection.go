@@ -82,6 +82,8 @@ func (c *Connection) WaitForResponse(event Event) (Event, error) {
 	case resp := <-ch:
 		return resp, nil
 	case <-time.After(5 * time.Second):
+		delete(c.waitingForResponse, event.EventID)
+		close(ch)
 		return Event{}, ErrResponseTimeouted
 	}
 }
