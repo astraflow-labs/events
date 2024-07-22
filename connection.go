@@ -1,67 +1,48 @@
 package events
 
 import (
-	"context"
+	"errors"
 	"sync"
 
-	"github.com/charmbracelet/log"
 	"github.com/gorilla/websocket"
 )
 
 type Connection struct {
 	ws                 *websocket.Conn
 	send               chan Event
-	ctx                context.Context
-	Close              context.CancelFunc
-	mu                 sync.Mutex
 	waitingForResponse map[string]chan Event
+	mu                 sync.Mutex
 }
 
 func NewConnection(ws *websocket.Conn) *Connection {
-	ctx, cancel := context.WithCancel(context.Background())
 	return &Connection{
-		ws:    ws,
-		send:  make(chan Event),
-		ctx:   ctx,
-		Close: cancel,
+		ws:   ws,
+		send: make(chan Event),
 	}
 }
 
 type EventHandler func(Event, *Connection)
 
-func (c *Connection) ReadLoop(eventHandler EventHandler) {
-	defer func() {
-		c.closeOnce()
-	}()
-
+func (c *Connection) ReadLoop(eventHandler EventHandler) error {
 	for {
-		select {
-		case <-c.ctx.Done():
-			// Handle shutdown
-			log.Info("ReadLoop shutting down gracefully")
-			return
-		default:
-			var event Event
-			err := c.ws.ReadJSON(&event)
-			if err != nil {
-				log.Error("Error reading from websocket", "err", err)
-				c.closeOnce() // Signal other loops to shut down
-				return
-			}
-
-			if ch, ok := c.waitingForResponse[event.EventID]; ok {
-				ch <- event
-				delete(c.waitingForResponse, event.EventID)
-				close(ch)
-				continue
-			}
-
-			eventHandler(event, c)
+		var event Event
+		err := c.ws.ReadJSON(&event)
+		if err != nil {
+			return err
 		}
+
+		if ch, ok := c.waitingForResponse[event.EventID]; ok {
+			ch <- event
+			delete(c.waitingForResponse, event.EventID)
+			close(ch)
+			continue
+		}
+
+		eventHandler(event, c)
 	}
 }
 
-func (c *Connection) WriteLoop() {
+func (c *Connection) WriteLoop() error {
 	defer func() {
 		c.ws.Close()
 	}()
@@ -72,25 +53,14 @@ func (c *Connection) WriteLoop() {
 		case event, ok := <-c.send:
 			if !ok {
 				// Kanalen er lukket, luk også websocket
-				c.ws.WriteMessage(websocket.CloseMessage, []byte{})
-				return
+				c.Close()
+				return errors.New("send channel closed")
 			}
 			err := c.ws.WriteJSON(event)
 			if err != nil {
-				log.Error("Error writing to websocket", "err", err)
-				return
+				return err
 			}
 		}
-	}
-}
-
-// Implement closeOnce to ensure ws.Close() is called only once
-func (c *Connection) closeOnce() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.ws != nil {
-		c.ws.Close()
-		c.ws = nil // Prevent further use
 	}
 }
 
@@ -107,4 +77,25 @@ func (c *Connection) WaitForResponse(event Event) chan Event {
 	ch := make(chan Event, 1)
 	c.waitingForResponse[event.EventID] = ch
 	return ch
+}
+
+func (c *Connection) Close() error {
+	err := c.ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+	if err != nil {
+		return err
+	}
+
+	err = c.ws.Close()
+	if err != nil {
+		return err
+	}
+
+	close(c.send)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, ch := range c.waitingForResponse {
+		close(ch)
+	}
+
+	return nil
 }
