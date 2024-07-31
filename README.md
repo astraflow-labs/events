@@ -1,1 +1,1 @@
-Internal library for sending and receiving differnet events across control server and agents.
+Internal library for sending and receiving different events across control server and agents.
