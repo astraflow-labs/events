@@ -12,13 +12,14 @@ type Connection struct {
 	ws                 *websocket.Conn
 	send               chan Event
 	waitingForResponse map[string]chan Event
-	mu                 sync.Mutex
+	wfrMutex           sync.RWMutex
 }
 
 func NewConnection(ws *websocket.Conn) *Connection {
 	return &Connection{
-		ws:   ws,
-		send: make(chan Event),
+		ws:                 ws,
+		send:               make(chan Event),
+		waitingForResponse: make(map[string]chan Event),
 	}
 }
 
@@ -32,12 +33,14 @@ func (c *Connection) ReadLoop(eventHandler EventHandler) error {
 			return err
 		}
 
+		c.wfrMutex.RLock()
 		if ch, ok := c.waitingForResponse[event.EventID]; ok {
 			ch <- event
 			delete(c.waitingForResponse, event.EventID)
 			close(ch)
 			continue
 		}
+		c.wfrMutex.RUnlock()
 
 		eventHandler(event, c)
 	}
@@ -70,23 +73,26 @@ func (c *Connection) Send() chan<- Event {
 }
 
 func (c *Connection) WaitForResponse(event Event) (Event, error) {
-	if c.waitingForResponse == nil {
-		c.waitingForResponse = make(map[string]chan Event)
-	}
 
 	ch := make(chan Event, 1)
-	c.mu.Lock()
+	c.wfrMutex.Lock()
 	c.waitingForResponse[event.EventID] = ch
-	c.mu.Unlock()
+	c.wfrMutex.Unlock()
 
 	select {
 	case resp := <-ch:
 		return resp, nil
 	case <-time.After(5 * time.Second):
-		c.mu.Lock()
+
+		// Cleanup in the waiting for response map
+		c.wfrMutex.Lock()
 		delete(c.waitingForResponse, event.EventID)
-		c.mu.Unlock()
+		c.wfrMutex.Unlock()
+
+		// Close the channel
 		close(ch)
+
+		// Return timeout error
 		return Event{}, ErrResponseTimeouted
 	}
 }
@@ -103,8 +109,8 @@ func (c *Connection) Close() error {
 	}
 
 	close(c.send)
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.wfrMutex.Lock()
+	defer c.wfrMutex.Unlock()
 	for _, ch := range c.waitingForResponse {
 		close(ch)
 	}

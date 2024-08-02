@@ -1,8 +1,6 @@
 package events
 
 import (
-	"strings"
-
 	"github.com/google/uuid"
 )
 
@@ -15,7 +13,7 @@ type Event struct {
 func NewEvent(eventType string, data []byte) Event {
 	uid := uuid.New().String()
 	return Event{
-		EventType: strings.ToUpper(eventType),
+		EventType: eventType,
 		EventID:   uid,
 		Data:      data,
 	}
