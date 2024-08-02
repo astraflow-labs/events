@@ -1,7 +1,5 @@
 package events
 
-import "net/http"
-
 type NewServerPayload struct {
 	ServerID string `json:"server_id"`
 	AuthorID string `json:"author_id"`
