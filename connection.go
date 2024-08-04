@@ -34,13 +34,15 @@ func (c *Connection) ReadLoop(eventHandler EventHandler) error {
 		}
 
 		c.wfrMutex.RLock()
-		if ch, ok := c.waitingForResponse[event.EventID]; ok {
+		ch, ok := c.waitingForResponse[event.EventID]
+		c.wfrMutex.RUnlock()
+
+		if ok {
 			ch <- event
 			delete(c.waitingForResponse, event.EventID)
 			close(ch)
 			continue
 		}
-		c.wfrMutex.RUnlock()
 
 		eventHandler(event, c)
 	}
