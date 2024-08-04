@@ -74,7 +74,7 @@ func (c *Connection) Send() chan<- Event {
 
 func (c *Connection) WaitForResponse(event Event) (Event, error) {
 
-	ch := make(chan Event, 1)
+	ch := make(chan Event)
 	c.wfrMutex.Lock()
 	c.waitingForResponse[event.EventID] = ch
 	c.wfrMutex.Unlock()
